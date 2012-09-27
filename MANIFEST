@@ -1,0 +1,8 @@
+MANIFEST
+README
+LICENSE
+Changes
+Makefile.PL
+lib/Device/Digilent.pm
+Digilent.xs
+t/001_load.t
