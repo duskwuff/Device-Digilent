@@ -1,0 +1,4 @@
+Device::Digilent - Interface with Digilent FPGA boards
+
+Device::Digilent implements an interface to the Digilent DPCUTIL library,
+allowing communication with a wide variety of Digilent FPGA boards.
