@@ -22,12 +22,12 @@ typedef int32_t DVCT;
  */
 typedef intptr_t DPCHANDLE;
 
-struct TRS {
+typedef struct TRS {
     TRT  trt;
     TRID trid;
     STS  sts;
     ERC  erc;
-};
+} TRS;
 
 
 #define LOAD_DPC_FN(fn) do { \
@@ -46,23 +46,50 @@ struct TRS {
 
 typedef struct {
     HMODULE dpcutil;
+
     DPC_FN(bool, DpcInit, ERC *);
     DPC_FN(void, DpcTerm);
+
+/*
+    DPC_FN(bool, DpcStartNotify, HWND, WORD, ERC *);
+    DPC_FN(bool, DpcEndNotify, HWND, ERC *);
+    DPC_FN(bool, DpcPendingTransactions, DPCHANDLE, int *, ERC *);
+    DPC_FN(bool, DpcQueryConfigStatus, DPCHANDLE, TRID, TRS *, ERC *);
+    DPC_FN(bool, DpcAbortConfigTransaction, DPCHANDLE, TRID, ERC *);
+    DPC_FN(bool, DpcClearConfigStatus, DPCHANDLE, TRID, ERC *);
+    DPC_FN(bool, DpcWaitForTransaction, DPCHANDLE, TRID, ERC *);
+    DPC_FN(ERC, DpcGetFirstError, DPCHANDLE);
+*/
+
     DPC_FN(bool, DpcGetDpcVersion, char *, ERC *);
-    DPC_FN(int,  DvmgGetDevCount, ERC *);
-    DPC_FN(void, DvmgStartConfigureDevices, HWND, ERC *);
-    DPC_FN(int,  DvmgGetHDVC, char *, ERC *);
-    DPC_FN(int,  DvmgGetDefaultDev, ERC *);
-    DPC_FN(bool, DvmgGetDevName, int, char *, ERC *);
-    DPC_FN(bool, DvmgGetDevType, int, DVCT *, ERC *);
+
+/*
+    DPC_FN(bool, DpcOpenJtag, DPCHANDLE *, const char *, ERC *, TRID *);
+    DPC_FN(bool, DpcCloseJtag, DPCHANDLE, ERC *);
+    DPC_FN(bool, DpcEnableJtag, DPCHANDLE, ERC *, TRID *);
+    DPC_FN(bool, DpcDisableJtag, DPCHANDLE, ERC *, TRID *);
+    DPC_FN(bool, DpcSetTmsTdiTck, DPCHANDLE, bool, bool, bool, TRID *);
+    DPC_FN(bool, DpcPutTdiBits, DPCHANDLE, int, const BYTE *, bool, bool, BYTE *, ERC *, TRID *);
+    DPC_FN(bool, DpcPutTmsTdiBits, DPCHANDLE, int, const BYTE *, bool, BYTE *, ERC *, TRID *);
+    DPC_FN(bool, DpcGetTdoBits, DPCHANDLE, int, bool, bool, BYTE *, ERC *, TRID *);
+*/
+
     DPC_FN(bool, DpcOpenData, DPCHANDLE *, const char *, ERC *, TRID *);
     DPC_FN(bool, DpcCloseData, DPCHANDLE, ERC *);
-    DPC_FN(bool, DpcGetReg, DPCHANDLE, BYTE, BYTE *, ERC *, TRID *);
-    DPC_FN(bool, DpcGetRegSet, DPCHANDLE, const BYTE *, BYTE *, int, ERC *, TRID *);
-    DPC_FN(bool, DpcGetRegRepeat, DPCHANDLE, BYTE, BYTE *, int, ERC *, TRID *);
     DPC_FN(bool, DpcPutReg, DPCHANDLE, BYTE, BYTE, ERC *, TRID *);
+    DPC_FN(bool, DpcGetReg, DPCHANDLE, BYTE, BYTE *, ERC *, TRID *);
     DPC_FN(bool, DpcPutRegSet, DPCHANDLE, const BYTE *, const BYTE *, int, ERC *, TRID *);
+    DPC_FN(bool, DpcGetRegSet, DPCHANDLE, const BYTE *, BYTE *, int, ERC *, TRID *);
     DPC_FN(bool, DpcPutRegRepeat, DPCHANDLE, BYTE, const BYTE *, int, ERC *, TRID *);
+    DPC_FN(bool, DpcGetRegRepeat, DPCHANDLE, BYTE, BYTE *, int, ERC *, TRID *);
+
+    DPC_FN(void, DvmgStartConfigureDevices, HWND, ERC *);
+    DPC_FN(int,  DvmgGetDevCount, ERC *);
+    DPC_FN(bool, DvmgGetDevName, int, char *, ERC *);
+    DPC_FN(bool, DvmgGetDevType, int, DVCT *, ERC *);
+    DPC_FN(int,  DvmgGetDefaultDev, ERC *);
+    DPC_FN(int,  DvmgGetHDVC, char *, ERC *);
+
 } my_cxt_t;
 
 void croak_dpc(const char *func, ERC err) {
