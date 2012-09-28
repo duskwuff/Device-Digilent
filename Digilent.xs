@@ -15,6 +15,13 @@ typedef int32_t TRT;
 typedef int32_t STS;
 typedef int32_t DVCT;
 
+/* Digilent defines this as a full HANDLE, but in practice it appears to always
+ * be a small integer. Declaring it as such avoids some annoying casts, albeit
+ * with the risk that Digilent will start using it as a real HANDLE at some
+ * point in the future.
+ */
+typedef intptr_t DPCHANDLE;
+
 struct TRS {
     TRT  trt;
     TRID trid;
@@ -30,6 +37,13 @@ struct TRS {
 
 #define DPC_FN(ret, fn, ...) ret (*fn)(__VA_ARGS__)
 
+/* NB: I've inferred a "const" specifier on rgbAddr* arguments, and on rgbData*
+ * for write operations.
+ *
+ * This isn't actually guaranteed by DPCUTIL, but it's unlikely that the
+ * library would violate it.
+ */
+
 typedef struct {
     HMODULE dpcutil;
     DPC_FN(bool, DpcInit, ERC *);
@@ -41,12 +55,14 @@ typedef struct {
     DPC_FN(int,  DvmgGetDefaultDev, ERC *);
     DPC_FN(bool, DvmgGetDevName, int, char *, ERC *);
     DPC_FN(bool, DvmgGetDevType, int, DVCT *, ERC *);
-    DPC_FN(bool, DpcOpenData, HANDLE *, char *, ERC *, TRID *);
-    DPC_FN(bool, DpcCloseData, HANDLE, ERC *);
-    DPC_FN(bool, DpcGetReg, HANDLE, BYTE, BYTE *, ERC *, TRID *);
-    DPC_FN(bool, DpcGetRegRepeat, HANDLE, BYTE, BYTE *, int, ERC *, TRID *);
-    DPC_FN(bool, DpcPutReg, HANDLE, BYTE, BYTE,   ERC *, TRID *);
-    DPC_FN(bool, DpcPutRegRepeat, HANDLE, BYTE, BYTE *, int, ERC *, TRID *);
+    DPC_FN(bool, DpcOpenData, DPCHANDLE *, const char *, ERC *, TRID *);
+    DPC_FN(bool, DpcCloseData, DPCHANDLE, ERC *);
+    DPC_FN(bool, DpcGetReg, DPCHANDLE, BYTE, BYTE *, ERC *, TRID *);
+    DPC_FN(bool, DpcGetRegSet, DPCHANDLE, const BYTE *, BYTE *, int, ERC *, TRID *);
+    DPC_FN(bool, DpcGetRegRepeat, DPCHANDLE, BYTE, BYTE *, int, ERC *, TRID *);
+    DPC_FN(bool, DpcPutReg, DPCHANDLE, BYTE, BYTE, ERC *, TRID *);
+    DPC_FN(bool, DpcPutRegSet, DPCHANDLE, const BYTE *, const BYTE *, int, ERC *, TRID *);
+    DPC_FN(bool, DpcPutRegRepeat, DPCHANDLE, BYTE, const BYTE *, int, ERC *, TRID *);
 } my_cxt_t;
 
 void croak_dpc(const char *func, ERC err) {
@@ -123,8 +139,10 @@ BOOT:
     LOAD_DPC_FN(DpcOpenData);
     LOAD_DPC_FN(DpcCloseData);
     LOAD_DPC_FN(DpcGetReg);
+    LOAD_DPC_FN(DpcGetRegSet);
     LOAD_DPC_FN(DpcGetRegRepeat);
     LOAD_DPC_FN(DpcPutReg);
+    LOAD_DPC_FN(DpcPutRegSet);
     LOAD_DPC_FN(DpcPutRegRepeat);
 }
 
@@ -144,7 +162,7 @@ Init()
             croak_dpc("DpcInit", err);
 
 void
-Deinit()
+Terminate()
     PREINIT:
         dMY_CXT;
     CODE:
@@ -230,56 +248,110 @@ GetType(int idx)
         RETVAL
 
 
-
 MODULE = Device::Digilent PACKAGE = Device::Digilent::Data
 
-void *
-Open(char *name)
+#define DDD_HANDLE SvIV(SvRV(self)); \
+        if (h == (DPCHANDLE) 0) croak("Connection not open");
+
+#define SANE_REGISTER(reg) do { \
+    if (reg < 0 || reg > 255) croak("Invalid register %d", reg); \
+} while(0)
+
+SV *
+new(SV *class, char *name)
     PREINIT:
         dMY_CXT;
     CODE:
-        HANDLE h;
+        DPCHANDLE h;
         ERC err;
-        if (MY_CXT.DpcOpenData(&h, name, &err, NULL)) {
-            RETVAL = h;
-        } else {
+        if (!SvPOK(class)) croak("Must be initialized as a class");
+        if (MY_CXT.DpcOpenData(&h, name, &err, NULL))
+            RETVAL = sv_setref_iv(newSV(0), SvPVX(class), h);
+        else
             croak_dpc("DpcOpenData", err);
-        }
     OUTPUT:
         RETVAL
 
 void
-Close(void *h)
+DESTROY(SV *self)
     PREINIT:
         dMY_CXT;
     CODE:
         ERC err;
+        DPCHANDLE h = DDD_HANDLE;
         if (!MY_CXT.DpcCloseData(h, &err))
             croak_dpc("DpcCloseData", err);
 
+void
+Close(SV *self)
+    PREINIT:
+        dMY_CXT;
+    CODE:
+        ERC err;
+        DPCHANDLE h = DDD_HANDLE;
+        if (MY_CXT.DpcCloseData(h, &err))
+            SvIV_set(SvRV(self), 0); // flag as closed
+        else
+            croak_dpc("DpcCloseData", err);
+
 int
-Get(void *h, int addr)
+GetByte(SV *self, int reg)
     PREINIT:
         dMY_CXT;
     CODE:
         ERC err;
         BYTE data;
-        if (!MY_CXT.DpcGetReg(h, addr, &data, &err, NULL))
+        DPCHANDLE h = DDD_HANDLE;
+        SANE_REGISTER(reg);
+        if (!MY_CXT.DpcGetReg(h, reg, &data, &err, NULL))
             croak_dpc("DpcGetReg", err);
         RETVAL = data;
     OUTPUT:
         RETVAL
 
 void
-GetRepeat(void *h, int reg, SV *bufsv, int count)
+GetMulti(SV *self, SV *bufsv, ...)
     PREINIT:
         dMY_CXT;
     CODE:
         ERC err;
-        if (count <= 0)
-            croak("Negative length");
-        if (!SvOK(bufsv))
-            sv_setpvs(bufsv, "");
+        DPCHANDLE h = DDD_HANDLE;
+        int i, ok, regs = items - 2;
+        if (!SvOK(bufsv)) sv_setpvs(bufsv, "");
+        SvPOK_only(bufsv);
+        char *datbuf = SvGROW(bufsv, (STRLEN)(regs + 1));
+        BYTE *regbuf;
+        Newx(regbuf, regs, BYTE);
+        for (i = 0; i < regs; i++) {
+            IV reg = SvIV(ST(i + 2));
+            if (reg < 0 || reg > 255) {
+                Safefree(regbuf);
+                croak("Invalid register %d", reg);
+            }
+            regbuf[i] = reg;
+        }
+        ok = MY_CXT.DpcGetRegSet(h, regbuf, datbuf, regs, &err, NULL);
+        Safefree(regbuf);
+        if (ok) {
+            SvCUR_set(bufsv, regs);
+            *SvEND(bufsv) = 0;
+            SvSETMAGIC(bufsv);
+        } else {
+            SvCUR_set(bufsv, 0);
+            SvSETMAGIC(bufsv);
+            croak_dpc("DpcGetRegSet", err);
+        }
+
+void
+GetRepeat(SV *self, int reg, SV *bufsv, int count)
+    PREINIT:
+        dMY_CXT;
+    CODE:
+        ERC err;
+        DPCHANDLE h = DDD_HANDLE;
+        SANE_REGISTER(reg);
+        if (count <= 0) croak("Negative length");
+        if (!SvOK(bufsv)) sv_setpvs(bufsv, "");
         SvPOK_only(bufsv);
         char *buf = SvGROW(bufsv, (STRLEN)(count + 1));
         if (MY_CXT.DpcGetRegRepeat(h, reg, buf, count, &err, NULL)) {
@@ -293,24 +365,53 @@ GetRepeat(void *h, int reg, SV *bufsv, int count)
         }
 
 void
-Put(void *h, int addr, int data)
+PutByte(SV *self, int reg, int data)
     PREINIT:
         dMY_CXT;
     CODE:
         ERC err;
-        if (!MY_CXT.DpcPutReg(h, addr, data, &err, NULL))
+        DPCHANDLE h = DDD_HANDLE;
+        SANE_REGISTER(reg);
+        if (!MY_CXT.DpcPutReg(h, reg, data, &err, NULL))
             croak_dpc("DpcPutReg", err);
 
 void
-PutRepeat(void *h, int reg, SV *bufsv)
+PutMulti(SV *self, SV *bufsv, ...)
     PREINIT:
         dMY_CXT;
     CODE:
         ERC err;
-        if (!SvPOK(bufsv))
-            croak("Input is not a string");
+        DPCHANDLE h = DDD_HANDLE;
+        int i, ok, regs = items - 2;
+        if (!SvPOK(bufsv)) croak("Buffer must be a string");
         STRLEN blen;
-        BYTE *buf = SvPV_const(bufsv, blen);
+        const BYTE *datbuf = SvPV_const(bufsv, blen);
+        if (regs > blen) croak("Buffer must be at least as long as register list");
+        BYTE *regbuf;
+        Newx(regbuf, regs, BYTE);
+        for (i = 0; i < regs; i++) {
+            IV reg = SvIV(ST(i + 2));
+            if (reg < 0 || reg > 255) {
+                Safefree(regbuf);
+                croak("Invalid register %d", reg);
+            }
+            regbuf[i] = reg;
+        }
+        ok = MY_CXT.DpcPutRegSet(h, regbuf, datbuf, regs, &err, NULL);
+        Safefree(regbuf);
+        if (!ok) croak_dpc("DpcPutRegSet", err);
+
+void
+PutRepeat(SV *self, int reg, SV *bufsv)
+    PREINIT:
+        dMY_CXT;
+    CODE:
+        ERC err;
+        DPCHANDLE h = DDD_HANDLE;
+        SANE_REGISTER(reg);
+        if (!SvPOK(bufsv)) croak("Buffer must be a string");
+        STRLEN blen;
+        const BYTE *buf = SvPV_const(bufsv, blen);
         if (!MY_CXT.DpcPutRegRepeat(h, reg, buf, blen, &err, NULL))
             croak_dpc("DpcGetRegRepeat", err);
 

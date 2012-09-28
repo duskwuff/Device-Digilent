@@ -4,5 +4,7 @@ LICENSE
 Changes
 Makefile.PL
 lib/Device/Digilent.pm
+lib/Device/Digilent/Config.pm
+lib/Device/Digilent/Data.pm
 Digilent.xs
 t/001_load.t
